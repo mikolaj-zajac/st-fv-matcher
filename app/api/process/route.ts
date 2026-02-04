@@ -112,7 +112,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const fileName = new URL(pdfUrl).pathname.split('/').pop() || `file-${Date.now()}.pdf`;
         const pdfPath = join(pdfDir, fileName);
         await writeFile(pdfPath, Buffer.from(pdfBuffer));
+        console.log('[API] PDF zapisany:', { fileName, pdfPath, size: pdfBuffer.byteLength });
       }
+      
+      console.log('[API] Wszystkie pliki pobrane i zapisane. XLSX:', xlsxPath, 'PDF dir:', pdfDir);
     } else {
       const formData = await request.formData();
       const bundleFile = formData.get('bundle') as File | null;

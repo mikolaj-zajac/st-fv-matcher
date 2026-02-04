@@ -60,12 +60,15 @@ function extractWithPdftotext(filePath: string): Promise<string> {
  */
 function extractFVFromRawPDF(filePath: string): string[] {
   try {
+    console.log('[PDF] Fallback extraction dla:', filePath);
     const buffer = fs.readFileSync(filePath);
     const text = buffer.toString('binary');
+    console.log('[PDF] Raw buffer size:', buffer.length, 'text length:', text.length);
     
     // Szukaj numerów FV bezpośrednio w surowych danych
     // numery mogą być w różnych formatach w PDF
     const fvMatches = text.match(/FV\/\d{1,4}\/PL\/\d{4}/g) || [];
+    console.log('[PDF] Fallback znalazł numerów FV:', fvMatches.length, 'pierwsze 3:', fvMatches.slice(0, 3));
     return [...new Set(fvMatches)];
   } catch (error) {
     console.warn(`Fallback extraction failed for ${filePath}:`, error);
