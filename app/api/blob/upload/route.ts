@@ -7,6 +7,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const response = await handleUpload({
     request,
     body,
+    token: process.env.BLOB_READ_WRITE_TOKEN,
     onBeforeGenerateToken: async (pathname) => {
       return {
         allowedContentTypes: [
