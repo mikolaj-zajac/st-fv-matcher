@@ -1,26 +1,16 @@
 @import "tailwindcss";
+@reference "tailwindcss/utilities";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer components {
+  .dropzone {
+    @apply border-2 border-dashed border-gray-200 rounded-lg p-8 text-center cursor-pointer transition-colors hover:border-blue-500 hover:bg-blue-50;
   }
-}
-
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  
+  .dropzone-active {
+    @apply border-blue-500 bg-blue-50 border-solid;
+  }
+  
+  .dropzone-reject {
+    @apply border-red-500 bg-red-50;
+  }
 }
