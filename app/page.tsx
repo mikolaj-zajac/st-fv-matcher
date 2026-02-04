@@ -18,9 +18,18 @@ export default function Home() {
     setError(null);
     
     acceptedFiles.forEach((file) => {
+      // Sprawdź rozmiar pliku
+      const maxXLSXSize = 5 * 1024 * 1024; // 5MB
+      const maxPDFSize = 2 * 1024 * 1024; // 2MB
+      
       // Sprawdź typ pliku
       if (file.type === 'application/pdf') {
         // PDF - faktury z IdoSell
+        if (file.size > maxPDFSize) {
+          setError(`Plik PDF "${file.name}" jest za duży (${(file.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 2MB.`);
+          return;
+        }
+        
         const newFile: UploadedFile = {
           file,
           type: 'pdf',
@@ -33,6 +42,11 @@ export default function Home() {
         file.type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       ) {
         // Plik z Enova (CSV/Excel)
+        if (file.size > maxXLSXSize) {
+          setError(`Plik XLSX "${file.name}" jest za duży (${(file.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 5MB.`);
+          return;
+        }
+        
         setEnovaFile({
           file,
           type: 'enova',
@@ -58,6 +72,15 @@ export default function Home() {
   const handleProcess = async () => {
     if (pdfFiles.length === 0 || !enovaFile) {
       setError('Potrzebujesz przynajmniej jeden plik PDF i plik z Enova');
+      return;
+    }
+
+    // Sprawdzenie całkowitego rozmiaru (limit Vercela ~10MB)
+    const totalSize = enovaFile.file.size + pdfFiles.reduce((sum, f) => sum + f.file.size, 0);
+    const maxTotalSize = 8 * 1024 * 1024; // 8MB aby mieć margines
+    
+    if (totalSize > maxTotalSize) {
+      setError(`Całkowity rozmiar plików (${(totalSize / 1024 / 1024).toFixed(2)}MB) przekracza limit 8MB. Spróbuj z mniejszą ilością plików PDF.`);
       return;
     }
 

@@ -109,6 +109,17 @@ const FileList: React.FC<FileListProps> = ({
 
         {/* Podsumowanie */}
         <div className="pt-4 border-t border-gray-200">
+          {(pdfFiles.length > 0 || enovaFile) && (
+            <div className="mb-4 p-3 bg-blue-50 rounded text-sm">
+              <p className="text-gray-700">
+                <strong>Całkowity rozmiar:</strong>{' '}
+                {formatFileSize(
+                  (enovaFile?.file.size || 0) + pdfFiles.reduce((sum, f) => sum + f.file.size, 0)
+                )}
+                {' '}(limit: 8MB)
+              </p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="text-center p-3 bg-gray-50 rounded">
               <p className="font-medium">{pdfFiles.length}</p>
