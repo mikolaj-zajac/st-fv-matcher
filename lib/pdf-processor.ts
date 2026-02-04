@@ -3,6 +3,7 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
+import pdfParse from 'pdf-parse';
 
 export interface PDFExtractionResult {
   fileName: string;
@@ -81,26 +82,32 @@ function extractFVFromRawPDF(filePath: string): string[] {
  */
 export async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
-    // Spróbuj pdftotext najpierw (jeśli jest dostępny w systemie)
-    try {
-      const text = await extractWithPdftotext(filePath);
-      if (text && text.length > 0) {
-        return text;
-      }
-    } catch (pdfototextError) {
-      // Pdftotext nie jest dostępny lub timeout, kontynuuj do fallback
-      console.warn(`pdftotext failed, using fallback extraction:`, pdfototextError);
+    console.log('[PDF] Ekstrakcja tekstu z:', filePath);
+    
+    // Użyj pdf-parse (działa na Vercelu)
+    const dataBuffer = fs.readFileSync(filePath);
+    console.log('[PDF] Odczytano buffer:', dataBuffer.length, 'bytes');
+    
+    const data = await pdfParse(dataBuffer);
+    console.log('[PDF] pdf-parse sukces:', {
+      pages: data.numpages,
+      textLength: data.text.length,
+      preview: data.text.substring(0, 200)
+    });
+    
+    if (data.text && data.text.length > 0) {
+      return data.text;
     }
-
+    
     // Fallback: szukaj numerów FV bezpośrednio w surowych danych PDF
+    console.log('[PDF] pdf-parse zwrócił pusty tekst, próbuję fallback');
     const numeryFV = extractFVFromRawPDF(filePath);
     
     if (numeryFV.length > 0) {
-      // Zwróć znalezione numery FV
+      console.log('[PDF] Fallback znalazł numery:', numeryFV.length);
       return numeryFV.join('\n');
     }
 
-    // Ostateczny fallback - zwróć ostrzeżenie ale nie rzucaj błędu
     console.warn(`Warning: Could not extract text from PDF ${filePath}`);
     return '';
   } catch (error) {
@@ -109,8 +116,10 @@ export async function extractTextFromPDF(filePath: string): Promise<string> {
     
     // Nie rzucaj błędu - zamiast tego spróbuj fallback
     try {
+      console.log('[PDF] Próbuję fallback po błędzie pdf-parse');
       const fvNumbers = extractFVFromRawPDF(filePath);
       if (fvNumbers.length > 0) {
+        console.log('[PDF] Fallback po błędzie znalazł:', fvNumbers.length, 'numerów');
         return fvNumbers.join('\n');
       }
     } catch (fallbackError) {
