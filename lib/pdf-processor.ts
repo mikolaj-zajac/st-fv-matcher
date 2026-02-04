@@ -123,14 +123,35 @@ export async function extractTextFromPDF(filePath: string): Promise<string> {
  * Przetwarza pojedynczy plik PDF
  */
 export async function processPDFFile(filePath: string): Promise<PDFExtractionResult> {
-  const fileName = path.basename(filePath);
-  const text = await extractTextFromPDF(filePath);
-  const numeryFV = extractFVNumbers(text);
+  try {
+    console.log('[PDF] Przetwarzanie pliku:', filePath);
+    const fileName = path.basename(filePath);
+    
+    console.log('[PDF] Ekstrakcja tekstu z:', fileName);
+    const text = await extractTextFromPDF(filePath);
+    console.log('[PDF] Tekst wyekstrahowany:', {
+      fileName,
+      length: text.length,
+      preview: text.substring(0, 100),
+    });
+    
+    console.log('[PDF] Wyszukiwanie numerów FV w:', fileName);
+    const numeryFV = extractFVNumbers(text);
+    console.log('[PDF] Znalezione numery FV:', numeryFV);
 
-  return {
-    fileName,
-    numeryFV,
-  };
+    return {
+      fileName,
+      numeryFV,
+    };
+  } catch (error) {
+    console.error('[PDF] Błąd przy przetwarzaniu PDF:', filePath, error);
+    // Zwróć pusty wynik zamiast rzucać błąd
+    return {
+      fileName: path.basename(filePath),
+      numeryFV: [],
+    };
+  }
+}
 }
 
 /**
@@ -138,11 +159,14 @@ export async function processPDFFile(filePath: string): Promise<PDFExtractionRes
  */
 export async function processPDFFolder(folderPath: string): Promise<PDFExtractionResult[]> {
   try {
+    console.log('[PDF] Przetwarzanie folderu:', folderPath);
+    
     // Sprawdzenie czy ścieżka to plik czy folder
     const stats = fs.statSync(folderPath);
     
     if (stats.isFile() && folderPath.endsWith('.pdf')) {
       // Jeśli to pojedynczy plik PDF
+      console.log('[PDF] Przetwarzanie pojedynczego pliku PDF:', folderPath);
       return [await processPDFFile(folderPath)];
     }
 
@@ -151,20 +175,31 @@ export async function processPDFFolder(folderPath: string): Promise<PDFExtractio
     }
 
     // Jeśli to folder
+    console.log('[PDF] Czytanie folderu...');
     const files = fs.readdirSync(folderPath);
+    console.log('[PDF] Znalezione pliki:', files);
+    
     const pdfFiles = files.filter(file => file.endsWith('.pdf'));
+    console.log('[PDF] Znalezione pliki PDF:', pdfFiles.length);
 
     const results: PDFExtractionResult[] = [];
     for (const file of pdfFiles) {
       const filePath = path.join(folderPath, file);
+      console.log('[PDF] Przetwarzanie pliku:', file);
       const result = await processPDFFile(filePath);
+      console.log('[PDF] Wynik:', {
+        fileName: result.fileName,
+        fvCount: result.numeryFV.length,
+        fvNumbers: result.numeryFV.slice(0, 5),
+      });
       results.push(result);
     }
 
+    console.log('[PDF] Przetwarzanie zakończone. Razem plików:', results.length);
     return results;
   } catch (error) {
-    console.error('Błąd przy przetwarzaniu folderu PDF:', error);
-    throw new Error(`Nie udało się przetworzyć folderu: ${error}`);
+    console.error('[PDF] Błąd przy przetwarzaniu folderu PDF:', error);
+    throw new Error(`Nie udało się przetworzyć folderu: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
