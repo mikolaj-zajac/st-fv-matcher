@@ -152,7 +152,6 @@ export async function processPDFFile(filePath: string): Promise<PDFExtractionRes
     };
   }
 }
-}
 
 /**
  * Przetwarza wszystkie pliki PDF z folderu

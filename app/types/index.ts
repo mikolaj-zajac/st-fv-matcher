@@ -27,6 +27,23 @@ export interface ValidationResult {
   };
 }
 
+// Optymizowana odpowiedź API dla zmniejszenia rozmiaru payload
+export interface ProcessingResponse {
+  summary: {
+    totalST: number;
+    totalFVInPDF: number;
+    matchedPairs: number;
+    errorCount: number;
+    warningCount: number;
+  };
+  correctPairsCount: number;
+  correctPairsPreview: Array<{ st: string; fv: string }>;
+  errorsCount: number;
+  errorsPreview: Array<{ type: string; message: string }>;
+  warningsCount: number;
+  warningsPreview: Array<{ type: string; message: string }>;
+}
+
 export interface ProcessingStatus {
   step: string;
   progress: number;

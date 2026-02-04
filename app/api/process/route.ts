@@ -8,7 +8,21 @@ import { validateData, generateXLSXReport, ValidationResult } from '@/lib/valida
 
 interface ProcessingResult {
   success: boolean;
-  data?: ValidationResult;
+  data?: {
+    summary: {
+      totalST: number;
+      totalFVInPDF: number;
+      matchedPairs: number;
+      errorCount: number;
+      warningCount: number;
+    };
+    correctPairsCount: number;
+    correctPairsPreview: Array<{ st: string; fv: string }>;
+    errorsCount: number;
+    errorsPreview: Array<{ type: string; message: string }>;
+    warningsCount: number;
+    warningsPreview: Array<{ type: string; message: string }>;
+  };
   reportPath?: string;
   error?: string;
 }
@@ -34,6 +48,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // Weryfikacja rozmiaru XLSX (max 5MB)
+    const maxFileSize = 5 * 1024 * 1024; // 5MB
+    if (xlsxFile.size > maxFileSize) {
+      console.log('[API] Błąd: plik XLSX za duży:', xlsxFile.size);
+      return NextResponse.json(
+        { success: false, error: `Plik XLSX jest za duży (${(xlsxFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 5MB.` },
+        { status: 413 }
+      );
+    }
+
     // Pobranie plików PDF
     const pdfFiles = formData.getAll('pdfs') as File[];
     if (pdfFiles.length === 0) {
@@ -44,9 +68,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       );
     }
 
+    // Weryfikacja rozmiaru PDF plików (max 2MB na plik)
+    const maxPdfSize = 2 * 1024 * 1024; // 2MB
+    for (const pdfFile of pdfFiles) {
+      if (pdfFile.size > maxPdfSize) {
+        console.log('[API] Błąd: plik PDF za duży:', pdfFile.name, pdfFile.size);
+        return NextResponse.json(
+          { success: false, error: `Plik PDF "${pdfFile.name}" jest za duży (${(pdfFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 2MB na plik.` },
+          { status: 413 }
+        );
+      }
+    }
+
     console.log('[API] Otrzymano pliki:', {
-      xlsx: xlsxFile.name,
-      pdfs: pdfFiles.map(f => f.name),
+      xlsx: `${xlsxFile.name} (${(xlsxFile.size / 1024).toFixed(2)}KB)`,
+      pdfs: pdfFiles.map(f => `${f.name} (${(f.size / 1024).toFixed(2)}KB)`),
     });
 
     // Tworzenie tymczasowego folderu
@@ -85,8 +121,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       console.log('[API] Przetwarzanie PDF...');
       const pdfResults = await processPDFFolder(pdfDir);
       console.log('[API] PDF przetworzony:', {
-        allFVNumbers: pdfResults.allFVNumbers.length,
-        filesProcessed: pdfResults.filesFVNumbers.size,
+        filesProcessed: pdfResults.length,
+        totalFVNumbers: pdfResults.reduce((sum, r) => sum + r.numeryFV.length, 0),
       });
       
       // Walidacja
@@ -104,9 +140,24 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       generateXLSXReport(validationResult, reportPath);
       console.log('[API] Raport wygenerowany:', reportPath);
 
+      // Zwróć optymizowany wynik (bez pełnych list błędów/ostrzeżeń aby zmniejszyć rozmiar payload)
       return {
         success: true,
-        data: validationResult,
+        data: {
+          summary: validationResult.summary,
+          correctPairsCount: validationResult.correctPairs.length,
+          correctPairsPreview: validationResult.correctPairs.slice(0, 10), // Tylko pierwszych 10
+          errorsCount: validationResult.errors.length,
+          errorsPreview: validationResult.errors.slice(0, 10).map(e => ({
+            type: e.type,
+            message: e.message,
+          })),
+          warningsCount: validationResult.warnings.length,
+          warningsPreview: validationResult.warnings.slice(0, 10).map(w => ({
+            type: w.type,
+            message: w.message,
+          })),
+        },
         reportPath: reportPath,
       } as ProcessingResult;
     };

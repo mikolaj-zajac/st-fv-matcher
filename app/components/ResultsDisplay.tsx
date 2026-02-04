@@ -1,9 +1,9 @@
 import React from 'react';
 import { CheckCircleIcon, ExclamationCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
-import { ValidationResult } from '../types';
+import { ProcessingResponse } from '../types';
 
 interface ResultsDisplayProps {
-  results: ValidationResult | null;
+  results: ProcessingResponse | null;
 }
 
 const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
@@ -15,7 +15,7 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
     );
   }
 
-  const { summary, correctPairs, errors, warnings } = results;
+  const { summary, correctPairsPreview, correctPairsCount, errorsPreview, errorsCount, warningsPreview, warningsCount } = results;
 
   return (
     <div className="bg-white rounded-xl shadow p-6 space-y-6">
@@ -44,23 +44,23 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
       </div>
 
       {/* Prawidłowe pary */}
-      {correctPairs.length > 0 && (
+      {correctPairsCount > 0 && (
         <div>
           <h3 className="text-lg font-semibold mb-3 flex items-center text-green-700">
             <CheckCircleIcon className="w-6 h-6 mr-2" />
-            Prawidłowe pary ST ↔ FV ({correctPairs.length})
+            Prawidłowe pary ST ↔ FV ({correctPairsCount})
           </h3>
           <div className="bg-green-50 rounded-lg p-4 max-h-64 overflow-y-auto">
             <div className="space-y-2">
-              {correctPairs.slice(0, 10).map((pair, idx) => (
+              {correctPairsPreview.map((pair, idx) => (
                 <div key={idx} className="flex items-center justify-between text-sm">
                   <span className="text-gray-700 font-medium">{pair.st}</span>
                   <span className="text-gray-500 mx-2">→</span>
                   <span className="text-gray-700">{pair.fv}</span>
                 </div>
               ))}
-              {correctPairs.length > 10 && (
-                <p className="text-sm text-gray-600 pt-2">... i {correctPairs.length - 10} więcej</p>
+              {correctPairsCount > correctPairsPreview.length && (
+                <p className="text-sm text-gray-600 pt-2">... i {correctPairsCount - correctPairsPreview.length} więcej</p>
               )}
             </div>
           </div>
@@ -68,49 +68,40 @@ const ResultsDisplay: React.FC<ResultsDisplayProps> = ({ results }) => {
       )}
 
       {/* Błędy */}
-      {errors.length > 0 && (
+      {errorsCount > 0 && (
         <div>
           <h3 className="text-lg font-semibold mb-3 flex items-center text-red-700">
             <XCircleIcon className="w-6 h-6 mr-2" />
-            Błędy ({errors.length})
+            Błędy ({errorsCount})
           </h3>
           <div className="bg-red-50 rounded-lg p-4 max-h-64 overflow-y-auto space-y-3">
-            {errors.slice(0, 10).map((error, idx) => (
+            {errorsPreview.map((error, idx) => (
               <div key={idx} className="pb-3 border-b border-red-200 last:border-b-0">
                 <p className="text-sm font-medium text-red-700">{error.message}</p>
-                {error.data.numerST && (
-                  <p className="text-xs text-red-600 mt-1">ST: {error.data.numerST}</p>
-                )}
-                {error.data.numerFV && (
-                  <p className="text-xs text-red-600">FV: {error.data.numerFV}</p>
-                )}
               </div>
             ))}
-            {errors.length > 10 && (
-              <p className="text-sm text-gray-600 pt-2">... i {errors.length - 10} więcej błędów</p>
+            {errorsCount > errorsPreview.length && (
+              <p className="text-sm text-gray-600 pt-2">... i {errorsCount - errorsPreview.length} więcej błędów</p>
             )}
           </div>
         </div>
       )}
 
       {/* Ostrzeżenia */}
-      {warnings.length > 0 && (
+      {warningsCount > 0 && (
         <div>
           <h3 className="text-lg font-semibold mb-3 flex items-center text-yellow-700">
             <ExclamationCircleIcon className="w-6 h-6 mr-2" />
-            Ostrzeżenia ({warnings.length})
+            Ostrzeżenia ({warningsCount})
           </h3>
           <div className="bg-yellow-50 rounded-lg p-4 max-h-64 overflow-y-auto space-y-3">
-            {warnings.slice(0, 10).map((warning, idx) => (
+            {warningsPreview.map((warning, idx) => (
               <div key={idx} className="pb-3 border-b border-yellow-200 last:border-b-0">
                 <p className="text-sm font-medium text-yellow-700">{warning.message}</p>
-                {warning.data.numerFV && (
-                  <p className="text-xs text-yellow-600 mt-1">FV: {warning.data.numerFV}</p>
-                )}
               </div>
             ))}
-            {warnings.length > 10 && (
-              <p className="text-sm text-gray-600 pt-2">... i {warnings.length - 10} więcej ostrzeżeń</p>
+            {warningsCount > warningsPreview.length && (
+              <p className="text-sm text-gray-600 pt-2">... i {warningsCount - warningsPreview.length} więcej ostrzeżeń</p>
             )}
           </div>
         </div>

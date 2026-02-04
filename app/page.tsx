@@ -5,13 +5,13 @@ import { useDropzone } from 'react-dropzone';
 import FileList from './components/FileList';
 import ProcessingButton from './components/ProcessingButton';
 import ResultsDisplay from './components/ResultsDisplay';
-import type { ValidationResult, UploadedFile } from './types';
+import type { ProcessingResponse, UploadedFile } from './types';
 
 export default function Home() {
   const [pdfFiles, setPdfFiles] = useState<UploadedFile[]>([]);
   const [enovaFile, setEnovaFile] = useState<UploadedFile | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [results, setResults] = useState<ValidationResult | null>(null);
+  const [results, setResults] = useState<ProcessingResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {

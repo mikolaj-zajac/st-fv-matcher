@@ -25,9 +25,8 @@ export async function processXLSX(filePath: string): Promise<XLSXData> {
       workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     } catch (xlsxError) {
       console.error('[XLSX] Błąd przy odczytywaniu XLSX:', xlsxError);
-      // Spróbuj alternatywnego podejścia
-      console.log('[XLSX] Próbuję alternatywnego podejścia...');
-      workbook = XLSX.read(fileBuffer, { type: 'buffer', defval: '' });
+      // Spróbuj ponownie bez opcji
+      workbook = XLSX.read(fileBuffer, { type: 'buffer' });
     }
     
     console.log('[XLSX] Arkusze:', workbook.SheetNames);
@@ -48,7 +47,7 @@ export async function processXLSX(filePath: string): Promise<XLSXData> {
       rows = XLSX.utils.sheet_to_json(worksheet);
     } catch (jsonError) {
       console.error('[XLSX] Błąd przy konwersji JSON:', jsonError);
-      rows = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
+      rows = XLSX.utils.sheet_to_json(worksheet);
     }
     
     console.log('[XLSX] Liczba wierszy:', rows.length);
