@@ -37,13 +37,12 @@ export const maxDuration = 60;
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     console.log('[API] Nowe żądanie POST /api/process');
-    const formData = await request.formData();
-    
+
     const maxXlsxSize = 10 * 1024 * 1024; // 10MB
     const maxPdfSize = 15 * 1024 * 1024; // 15MB
     const maxBundleSize = 20 * 1024 * 1024; // 20MB
 
-    const bundleFile = formData.get('bundle') as File | null;
+    const contentType = request.headers.get('content-type') || '';
 
     // Tworzenie tymczasowego folderu
     const tempDir = join(tmpdir(), 'st-fv-matcher-' + Date.now());
@@ -53,124 +52,190 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const pdfDir = join(tempDir, 'pdfs');
     await mkdir(pdfDir, { recursive: true });
 
-    if (bundleFile) {
-      if (bundleFile.size > maxBundleSize) {
-        console.log('[API] Błąd: paczka ZIP za duża:', bundleFile.size);
+    if (contentType.includes('application/json')) {
+      const body = await request.json();
+      const xlsxUrl = body?.xlsxUrl as string | undefined;
+      const pdfUrls = body?.pdfUrls as string[] | undefined;
+
+      if (!xlsxUrl) {
         return NextResponse.json(
-          { success: false, error: `Paczka ZIP jest za duża (${(bundleFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 20MB.` },
-          { status: 413 }
+          { success: false, error: 'Brak xlsxUrl w żądaniu' },
+          { status: 400 }
         );
       }
 
-      console.log('[API] Otrzymano paczkę ZIP:', `${bundleFile.name} (${(bundleFile.size / 1024).toFixed(2)}KB)`);
-      const zipBuffer = new Uint8Array(await bundleFile.arrayBuffer());
-      const entries = unzipSync(zipBuffer);
-      const entryNames = Object.keys(entries);
+      if (!pdfUrls || pdfUrls.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Brak pdfUrls w żądaniu' },
+          { status: 400 }
+        );
+      }
 
-      const xlsxEntryName = entryNames.find((name) => {
-        const lower = name.toLowerCase();
-        return lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv');
+      console.log('[API] Pobieranie plików z URL...', {
+        xlsxUrl,
+        pdfCount: pdfUrls.length,
       });
 
-      if (!xlsxEntryName) {
+      const xlsxResponse = await fetch(xlsxUrl);
+      if (!xlsxResponse.ok) {
         return NextResponse.json(
-          { success: false, error: 'Paczka ZIP nie zawiera pliku XLSX/CSV' },
+          { success: false, error: 'Nie udało się pobrać pliku XLSX z storage' },
           { status: 400 }
         );
       }
-
-      const pdfEntryNames = entryNames.filter((name) => name.toLowerCase().endsWith('.pdf'));
-      if (pdfEntryNames.length === 0) {
+      const xlsxBuffer = await xlsxResponse.arrayBuffer();
+      if (xlsxBuffer.byteLength > maxXlsxSize) {
         return NextResponse.json(
-          { success: false, error: 'Paczka ZIP nie zawiera plików PDF' },
-          { status: 400 }
-        );
-      }
-
-      const xlsxEntry = entries[xlsxEntryName];
-      if (xlsxEntry.length > maxXlsxSize) {
-        return NextResponse.json(
-          { success: false, error: `Plik XLSX jest za duży (${(xlsxEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 10MB.` },
+          { success: false, error: `Plik XLSX jest za duży (${(xlsxBuffer.byteLength / 1024 / 1024).toFixed(2)}MB). Maksymalnie 10MB.` },
           { status: 413 }
         );
       }
 
-      const xlsxFileName = xlsxEntryName.split('/').pop() || 'upload.xlsx';
-      xlsxPath = join(tempDir, xlsxFileName);
-      await writeFile(xlsxPath, Buffer.from(xlsxEntry));
-      console.log('[API] XLSX z ZIP zapisany:', xlsxPath);
+      xlsxPath = join(tempDir, 'upload.xlsx');
+      await writeFile(xlsxPath, Buffer.from(xlsxBuffer));
 
-      for (const pdfEntryName of pdfEntryNames) {
-        const pdfEntry = entries[pdfEntryName];
-        if (pdfEntry.length > maxPdfSize) {
+      for (const pdfUrl of pdfUrls) {
+        const pdfResponse = await fetch(pdfUrl);
+        if (!pdfResponse.ok) {
           return NextResponse.json(
-            { success: false, error: `Plik PDF "${pdfEntryName}" jest za duży (${(pdfEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 15MB na plik.` },
+            { success: false, error: `Nie udało się pobrać PDF z storage: ${pdfUrl}` },
+            { status: 400 }
+          );
+        }
+        const pdfBuffer = await pdfResponse.arrayBuffer();
+        if (pdfBuffer.byteLength > maxPdfSize) {
+          return NextResponse.json(
+            { success: false, error: `Plik PDF jest za duży (${(pdfBuffer.byteLength / 1024 / 1024).toFixed(2)}MB). Maksymalnie 15MB na plik.` },
             { status: 413 }
           );
         }
-        const pdfFileName = pdfEntryName.split('/').pop() || 'file.pdf';
-        const pdfPath = join(pdfDir, pdfFileName);
-        await writeFile(pdfPath, Buffer.from(pdfEntry));
-        console.log('[API] PDF z ZIP zapisany:', pdfPath);
+        const fileName = new URL(pdfUrl).pathname.split('/').pop() || `file-${Date.now()}.pdf`;
+        const pdfPath = join(pdfDir, fileName);
+        await writeFile(pdfPath, Buffer.from(pdfBuffer));
       }
     } else {
-      // Pobranie pliku XLSX
-      const xlsxFile = formData.get('xlsx') as File;
-      if (!xlsxFile) {
-        console.log('[API] Błąd: brak pliku XLSX');
-        return NextResponse.json(
-          { success: false, error: 'Brak pliku XLSX' },
-          { status: 400 }
-        );
-      }
+      const formData = await request.formData();
+      const bundleFile = formData.get('bundle') as File | null;
 
-      // Weryfikacja rozmiaru XLSX (max 5MB)
-      if (xlsxFile.size > maxXlsxSize) {
-        console.log('[API] Błąd: plik XLSX za duży:', xlsxFile.size);
-        return NextResponse.json(
-          { success: false, error: `Plik XLSX jest za duży (${(xlsxFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 10MB.` },
-          { status: 413 }
-        );
-      }
-
-      // Pobranie plików PDF
-      const pdfFiles = formData.getAll('pdfs') as File[];
-      if (pdfFiles.length === 0) {
-        console.log('[API] Błąd: brak plików PDF');
-        return NextResponse.json(
-          { success: false, error: 'Brak plików PDF' },
-          { status: 400 }
-        );
-      }
-
-      // Weryfikacja rozmiaru PDF plików (max 2MB na plik)
-      for (const pdfFile of pdfFiles) {
-        if (pdfFile.size > maxPdfSize) {
-          console.log('[API] Błąd: plik PDF za duży:', pdfFile.name, pdfFile.size);
+      if (bundleFile) {
+        if (bundleFile.size > maxBundleSize) {
+          console.log('[API] Błąd: paczka ZIP za duża:', bundleFile.size);
           return NextResponse.json(
-            { success: false, error: `Plik PDF "${pdfFile.name}" jest za duży (${(pdfFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 15MB na plik.` },
+            { success: false, error: `Paczka ZIP jest za duża (${(bundleFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 20MB.` },
             { status: 413 }
           );
         }
-      }
 
-      console.log('[API] Otrzymano pliki:', {
-        xlsx: `${xlsxFile.name} (${(xlsxFile.size / 1024).toFixed(2)}KB)`,
-        pdfs: pdfFiles.map(f => `${f.name} (${(f.size / 1024).toFixed(2)}KB)`),
-      });
+        console.log('[API] Otrzymano paczkę ZIP:', `${bundleFile.name} (${(bundleFile.size / 1024).toFixed(2)}KB)`);
+        const zipBuffer = new Uint8Array(await bundleFile.arrayBuffer());
+        const entries = unzipSync(zipBuffer);
+        const entryNames = Object.keys(entries);
 
-      // Zapis pliku XLSX
-      xlsxPath = join(tempDir, xlsxFile.name);
-      const xlsxBuffer = await xlsxFile.arrayBuffer();
-      await writeFile(xlsxPath, Buffer.from(xlsxBuffer));
-      console.log('[API] XLSX zapisany:', xlsxPath);
+        const xlsxEntryName = entryNames.find((name) => {
+          const lower = name.toLowerCase();
+          return lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv');
+        });
 
-      // Zapis plików PDF
-      for (const pdfFile of pdfFiles) {
-        const pdfPath = join(pdfDir, pdfFile.name);
-        const pdfBuffer = await pdfFile.arrayBuffer();
-        await writeFile(pdfPath, Buffer.from(pdfBuffer));
-        console.log('[API] PDF zapisany:', pdfPath);
+        if (!xlsxEntryName) {
+          return NextResponse.json(
+            { success: false, error: 'Paczka ZIP nie zawiera pliku XLSX/CSV' },
+            { status: 400 }
+          );
+        }
+
+        const pdfEntryNames = entryNames.filter((name) => name.toLowerCase().endsWith('.pdf'));
+        if (pdfEntryNames.length === 0) {
+          return NextResponse.json(
+            { success: false, error: 'Paczka ZIP nie zawiera plików PDF' },
+            { status: 400 }
+          );
+        }
+
+        const xlsxEntry = entries[xlsxEntryName];
+        if (xlsxEntry.length > maxXlsxSize) {
+          return NextResponse.json(
+            { success: false, error: `Plik XLSX jest za duży (${(xlsxEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 10MB.` },
+            { status: 413 }
+          );
+        }
+
+        const xlsxFileName = xlsxEntryName.split('/').pop() || 'upload.xlsx';
+        xlsxPath = join(tempDir, xlsxFileName);
+        await writeFile(xlsxPath, Buffer.from(xlsxEntry));
+        console.log('[API] XLSX z ZIP zapisany:', xlsxPath);
+
+        for (const pdfEntryName of pdfEntryNames) {
+          const pdfEntry = entries[pdfEntryName];
+          if (pdfEntry.length > maxPdfSize) {
+            return NextResponse.json(
+              { success: false, error: `Plik PDF "${pdfEntryName}" jest za duży (${(pdfEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 15MB na plik.` },
+              { status: 413 }
+            );
+          }
+          const pdfFileName = pdfEntryName.split('/').pop() || 'file.pdf';
+          const pdfPath = join(pdfDir, pdfFileName);
+          await writeFile(pdfPath, Buffer.from(pdfEntry));
+          console.log('[API] PDF z ZIP zapisany:', pdfPath);
+        }
+      } else {
+        // Pobranie pliku XLSX
+        const xlsxFile = formData.get('xlsx') as File;
+        if (!xlsxFile) {
+          console.log('[API] Błąd: brak pliku XLSX');
+          return NextResponse.json(
+            { success: false, error: 'Brak pliku XLSX' },
+            { status: 400 }
+          );
+        }
+
+        // Weryfikacja rozmiaru XLSX (max 5MB)
+        if (xlsxFile.size > maxXlsxSize) {
+          console.log('[API] Błąd: plik XLSX za duży:', xlsxFile.size);
+          return NextResponse.json(
+            { success: false, error: `Plik XLSX jest za duży (${(xlsxFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 10MB.` },
+            { status: 413 }
+          );
+        }
+
+        // Pobranie plików PDF
+        const pdfFiles = formData.getAll('pdfs') as File[];
+        if (pdfFiles.length === 0) {
+          console.log('[API] Błąd: brak plików PDF');
+          return NextResponse.json(
+            { success: false, error: 'Brak plików PDF' },
+            { status: 400 }
+          );
+        }
+
+        // Weryfikacja rozmiaru PDF plików (max 2MB na plik)
+        for (const pdfFile of pdfFiles) {
+          if (pdfFile.size > maxPdfSize) {
+            console.log('[API] Błąd: plik PDF za duży:', pdfFile.name, pdfFile.size);
+            return NextResponse.json(
+              { success: false, error: `Plik PDF "${pdfFile.name}" jest za duży (${(pdfFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 15MB na plik.` },
+              { status: 413 }
+            );
+          }
+        }
+
+        console.log('[API] Otrzymano pliki:', {
+          xlsx: `${xlsxFile.name} (${(xlsxFile.size / 1024).toFixed(2)}KB)`,
+          pdfs: pdfFiles.map(f => `${f.name} (${(f.size / 1024).toFixed(2)}KB)`),
+        });
+
+        // Zapis pliku XLSX
+        xlsxPath = join(tempDir, xlsxFile.name);
+        const xlsxBuffer = await xlsxFile.arrayBuffer();
+        await writeFile(xlsxPath, Buffer.from(xlsxBuffer));
+        console.log('[API] XLSX zapisany:', xlsxPath);
+
+        // Zapis plików PDF
+        for (const pdfFile of pdfFiles) {
+          const pdfPath = join(pdfDir, pdfFile.name);
+          const pdfBuffer = await pdfFile.arrayBuffer();
+          await writeFile(pdfPath, Buffer.from(pdfBuffer));
+          console.log('[API] PDF zapisany:', pdfPath);
+        }
       }
     }
 
