@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { zipSync } from 'fflate';
 import { useDropzone } from 'react-dropzone';
 import FileList from './components/FileList';
 import ProcessingButton from './components/ProcessingButton';
@@ -11,6 +12,7 @@ export default function Home() {
   const [pdfFiles, setPdfFiles] = useState<UploadedFile[]>([]);
   const [enovaFile, setEnovaFile] = useState<UploadedFile | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [compressUploads, setCompressUploads] = useState(true);
   const [results, setResults] = useState<ProcessingResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -88,10 +90,30 @@ export default function Home() {
     setError(null);
 
     const formData = new FormData();
-    pdfFiles.forEach((file) => {
-      formData.append('pdfs', file.file);
-    });
-    formData.append('xlsx', enovaFile.file);
+    if (compressUploads) {
+      const zipEntries: Record<string, Uint8Array> = {};
+      const xlsxData = new Uint8Array(await enovaFile.file.arrayBuffer());
+      zipEntries[`xlsx/${enovaFile.file.name}`] = xlsxData;
+
+      for (const pdf of pdfFiles) {
+        const pdfData = new Uint8Array(await pdf.file.arrayBuffer());
+        zipEntries[`pdfs/${pdf.file.name}`] = pdfData;
+      }
+
+      const zipped = zipSync(zipEntries, { level: 6 });
+      const zippedBuffer = zipped.buffer.slice(
+        zipped.byteOffset,
+        zipped.byteOffset + zipped.byteLength
+      ) as ArrayBuffer;
+      const zipBlob = new Blob([zippedBuffer], { type: 'application/zip' });
+      const zipFile = new File([zipBlob], 'upload.zip', { type: 'application/zip' });
+      formData.append('bundle', zipFile);
+    } else {
+      pdfFiles.forEach((file) => {
+        formData.append('pdfs', file.file);
+      });
+      formData.append('xlsx', enovaFile.file);
+    }
 
     try {
       const response = await fetch('/api/process', {
@@ -194,6 +216,22 @@ export default function Home() {
 
           {/* Prawa kolumna - Wyniki */}
           <div className="space-y-6">
+            {/* Ustawienia wysyłki */}
+            <div className="bg-white rounded-xl shadow p-4">
+              <label className="flex items-center gap-3 text-sm text-gray-700">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={compressUploads}
+                  onChange={(e) => setCompressUploads(e.target.checked)}
+                />
+                Kompresuj pliki przed wysłaniem (ZIP)
+              </label>
+              <p className="text-xs text-gray-500 mt-2">
+                ZIP zwykle zmniejsza payload, ale przy PDF oszczędność może być niewielka.
+              </p>
+            </div>
+
             {/* Przycisk procesowania */}
             <ProcessingButton
               isProcessing={isProcessing}

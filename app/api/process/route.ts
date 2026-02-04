@@ -3,8 +3,9 @@ import { writeFile, mkdir } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { processXLSX } from '@/lib/xlsx-processor';
-import { processPDFFolder, getAllFVNumbers } from '@/lib/pdf-processor';
-import { validateData, generateXLSXReport, ValidationResult } from '@/lib/validator';
+import { processPDFFolder } from '@/lib/pdf-processor';
+import { validateData, generateXLSXReport } from '@/lib/validator';
+import { unzipSync } from 'fflate';
 
 interface ProcessingResult {
   success: boolean;
@@ -38,72 +39,139 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.log('[API] Nowe żądanie POST /api/process');
     const formData = await request.formData();
     
-    // Pobranie pliku XLSX
-    const xlsxFile = formData.get('xlsx') as File;
-    if (!xlsxFile) {
-      console.log('[API] Błąd: brak pliku XLSX');
-      return NextResponse.json(
-        { success: false, error: 'Brak pliku XLSX' },
-        { status: 400 }
-      );
-    }
-
-    // Weryfikacja rozmiaru XLSX (max 5MB)
-    const maxFileSize = 5 * 1024 * 1024; // 5MB
-    if (xlsxFile.size > maxFileSize) {
-      console.log('[API] Błąd: plik XLSX za duży:', xlsxFile.size);
-      return NextResponse.json(
-        { success: false, error: `Plik XLSX jest za duży (${(xlsxFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 5MB.` },
-        { status: 413 }
-      );
-    }
-
-    // Pobranie plików PDF
-    const pdfFiles = formData.getAll('pdfs') as File[];
-    if (pdfFiles.length === 0) {
-      console.log('[API] Błąd: brak plików PDF');
-      return NextResponse.json(
-        { success: false, error: 'Brak plików PDF' },
-        { status: 400 }
-      );
-    }
-
-    // Weryfikacja rozmiaru PDF plików (max 2MB na plik)
+    const maxXlsxSize = 5 * 1024 * 1024; // 5MB
     const maxPdfSize = 2 * 1024 * 1024; // 2MB
-    for (const pdfFile of pdfFiles) {
-      if (pdfFile.size > maxPdfSize) {
-        console.log('[API] Błąd: plik PDF za duży:', pdfFile.name, pdfFile.size);
-        return NextResponse.json(
-          { success: false, error: `Plik PDF "${pdfFile.name}" jest za duży (${(pdfFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 2MB na plik.` },
-          { status: 413 }
-        );
-      }
-    }
+    const maxBundleSize = 8 * 1024 * 1024; // 8MB
 
-    console.log('[API] Otrzymano pliki:', {
-      xlsx: `${xlsxFile.name} (${(xlsxFile.size / 1024).toFixed(2)}KB)`,
-      pdfs: pdfFiles.map(f => `${f.name} (${(f.size / 1024).toFixed(2)}KB)`),
-    });
+    const bundleFile = formData.get('bundle') as File | null;
 
     // Tworzenie tymczasowego folderu
     const tempDir = join(tmpdir(), 'st-fv-matcher-' + Date.now());
     await mkdir(tempDir, { recursive: true });
 
-    // Zapis pliku XLSX
-    const xlsxPath = join(tempDir, xlsxFile.name);
-    const xlsxBuffer = await xlsxFile.arrayBuffer();
-    await writeFile(xlsxPath, Buffer.from(xlsxBuffer));
-    console.log('[API] XLSX zapisany:', xlsxPath);
-
-    // Zapis plików PDF
+    let xlsxPath = '';
     const pdfDir = join(tempDir, 'pdfs');
     await mkdir(pdfDir, { recursive: true });
 
-    for (const pdfFile of pdfFiles) {
-      const pdfPath = join(pdfDir, pdfFile.name);
-      const pdfBuffer = await pdfFile.arrayBuffer();
-      await writeFile(pdfPath, Buffer.from(pdfBuffer));
-      console.log('[API] PDF zapisany:', pdfPath);
+    if (bundleFile) {
+      if (bundleFile.size > maxBundleSize) {
+        console.log('[API] Błąd: paczka ZIP za duża:', bundleFile.size);
+        return NextResponse.json(
+          { success: false, error: `Paczka ZIP jest za duża (${(bundleFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 8MB.` },
+          { status: 413 }
+        );
+      }
+
+      console.log('[API] Otrzymano paczkę ZIP:', `${bundleFile.name} (${(bundleFile.size / 1024).toFixed(2)}KB)`);
+      const zipBuffer = new Uint8Array(await bundleFile.arrayBuffer());
+      const entries = unzipSync(zipBuffer);
+      const entryNames = Object.keys(entries);
+
+      const xlsxEntryName = entryNames.find((name) => {
+        const lower = name.toLowerCase();
+        return lower.endsWith('.xlsx') || lower.endsWith('.xls') || lower.endsWith('.csv');
+      });
+
+      if (!xlsxEntryName) {
+        return NextResponse.json(
+          { success: false, error: 'Paczka ZIP nie zawiera pliku XLSX/CSV' },
+          { status: 400 }
+        );
+      }
+
+      const pdfEntryNames = entryNames.filter((name) => name.toLowerCase().endsWith('.pdf'));
+      if (pdfEntryNames.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Paczka ZIP nie zawiera plików PDF' },
+          { status: 400 }
+        );
+      }
+
+      const xlsxEntry = entries[xlsxEntryName];
+      if (xlsxEntry.length > maxXlsxSize) {
+        return NextResponse.json(
+          { success: false, error: `Plik XLSX jest za duży (${(xlsxEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 5MB.` },
+          { status: 413 }
+        );
+      }
+
+      const xlsxFileName = xlsxEntryName.split('/').pop() || 'upload.xlsx';
+      xlsxPath = join(tempDir, xlsxFileName);
+      await writeFile(xlsxPath, Buffer.from(xlsxEntry));
+      console.log('[API] XLSX z ZIP zapisany:', xlsxPath);
+
+      for (const pdfEntryName of pdfEntryNames) {
+        const pdfEntry = entries[pdfEntryName];
+        if (pdfEntry.length > maxPdfSize) {
+          return NextResponse.json(
+            { success: false, error: `Plik PDF "${pdfEntryName}" jest za duży (${(pdfEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 2MB na plik.` },
+            { status: 413 }
+          );
+        }
+        const pdfFileName = pdfEntryName.split('/').pop() || 'file.pdf';
+        const pdfPath = join(pdfDir, pdfFileName);
+        await writeFile(pdfPath, Buffer.from(pdfEntry));
+        console.log('[API] PDF z ZIP zapisany:', pdfPath);
+      }
+    } else {
+      // Pobranie pliku XLSX
+      const xlsxFile = formData.get('xlsx') as File;
+      if (!xlsxFile) {
+        console.log('[API] Błąd: brak pliku XLSX');
+        return NextResponse.json(
+          { success: false, error: 'Brak pliku XLSX' },
+          { status: 400 }
+        );
+      }
+
+      // Weryfikacja rozmiaru XLSX (max 5MB)
+      if (xlsxFile.size > maxXlsxSize) {
+        console.log('[API] Błąd: plik XLSX za duży:', xlsxFile.size);
+        return NextResponse.json(
+          { success: false, error: `Plik XLSX jest za duży (${(xlsxFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 5MB.` },
+          { status: 413 }
+        );
+      }
+
+      // Pobranie plików PDF
+      const pdfFiles = formData.getAll('pdfs') as File[];
+      if (pdfFiles.length === 0) {
+        console.log('[API] Błąd: brak plików PDF');
+        return NextResponse.json(
+          { success: false, error: 'Brak plików PDF' },
+          { status: 400 }
+        );
+      }
+
+      // Weryfikacja rozmiaru PDF plików (max 2MB na plik)
+      for (const pdfFile of pdfFiles) {
+        if (pdfFile.size > maxPdfSize) {
+          console.log('[API] Błąd: plik PDF za duży:', pdfFile.name, pdfFile.size);
+          return NextResponse.json(
+            { success: false, error: `Plik PDF "${pdfFile.name}" jest za duży (${(pdfFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 2MB na plik.` },
+            { status: 413 }
+          );
+        }
+      }
+
+      console.log('[API] Otrzymano pliki:', {
+        xlsx: `${xlsxFile.name} (${(xlsxFile.size / 1024).toFixed(2)}KB)`,
+        pdfs: pdfFiles.map(f => `${f.name} (${(f.size / 1024).toFixed(2)}KB)`),
+      });
+
+      // Zapis pliku XLSX
+      xlsxPath = join(tempDir, xlsxFile.name);
+      const xlsxBuffer = await xlsxFile.arrayBuffer();
+      await writeFile(xlsxPath, Buffer.from(xlsxBuffer));
+      console.log('[API] XLSX zapisany:', xlsxPath);
+
+      // Zapis plików PDF
+      for (const pdfFile of pdfFiles) {
+        const pdfPath = join(pdfDir, pdfFile.name);
+        const pdfBuffer = await pdfFile.arrayBuffer();
+        await writeFile(pdfPath, Buffer.from(pdfBuffer));
+        console.log('[API] PDF zapisany:', pdfPath);
+      }
     }
 
     // Przetwarzanie z timeout
