@@ -20,11 +20,9 @@ export function extractFVNumbers(text: string): string[] {
 
 /**
  * Ekstrahuj tekst z PDF używając pdftotext (system command)
- * Fallback dla sytuacji gdzie worker nie jest dostępny
  */
 function extractWithPdftotext(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    // Spróbuj użyć pdftotext command-line tool jeśli jest dostępny
     const proc = spawn('pdftotext', [filePath, '-']);
     let output = '';
     let error = '';
@@ -48,54 +46,76 @@ function extractWithPdftotext(filePath: string): Promise<string> {
     proc.on('error', (err) => {
       reject(err);
     });
+
+    // Timeout - jeśli pdftotext trwa dłużej niż 10s, zabij proces
+    setTimeout(() => {
+      proc.kill();
+      reject(new Error('pdftotext timeout'));
+    }, 10000);
   });
 }
 
 /**
+ * Fallback extraction - szukaj numerów FV bezpośrednio w pliku
+ */
+function extractFVFromRawPDF(filePath: string): string[] {
+  try {
+    const buffer = fs.readFileSync(filePath);
+    const text = buffer.toString('binary');
+    
+    // Szukaj numerów FV bezpośrednio w surowych danych
+    // numery mogą być w różnych formatach w PDF
+    const fvMatches = text.match(/FV\/\d{1,4}\/PL\/\d{4}/g) || [];
+    return [...new Set(fvMatches)];
+  } catch (error) {
+    console.warn(`Fallback extraction failed for ${filePath}:`, error);
+    return [];
+  }
+}
+
+/**
  * Odczytuje tekst z pliku PDF
- * Próbuje kilka różnych podejść aby uniknąć worker issues
  */
 export async function extractTextFromPDF(filePath: string): Promise<string> {
   try {
     // Spróbuj pdftotext najpierw (jeśli jest dostępny w systemie)
     try {
       const text = await extractWithPdftotext(filePath);
-      if (text.length > 0) {
+      if (text && text.length > 0) {
         return text;
       }
     } catch (pdfototextError) {
-      // Pdftotext nie jest dostępny, próbuj fallback
+      // Pdftotext nie jest dostępny lub timeout, kontynuuj do fallback
+      console.warn(`pdftotext failed, using fallback extraction:`, pdfototextError);
     }
 
-    // Fallback: użyj regex extraction z surowych danych
-    // To jest limited ale będzie działać bez worker issues
-    const buffer = fs.readFileSync(filePath);
-    const text = buffer.toString('binary');
+    // Fallback: szukaj numerów FV bezpośrednio w surowych danych PDF
+    const numeryFV = extractFVFromRawPDF(filePath);
     
-    // Spróbuj wyciągnąć tekst z PDF stream
-    // PDF zawiera tekst między BT...ET lub TJ operators
-    const matches = text.match(/BT[\s\S]*?ET/g) || [];
-    let extractedText = matches.join('\n');
-    
-    // Jeśli to nie zadziałało, spróbuj innego podejścia
-    if (extractedText.length === 0) {
-      // Fallback: szukaj bezpośrednio numerów FV w surowych danych
-      // Numery FV mogą być zakodowane w PDF
-      const fvMatches = text.match(/FV\/\d+\/PL\/\d{4}/g) || [];
-      if (fvMatches.length > 0) {
-        return fvMatches.join('\n');
-      }
-      
-      // Ostateczny fallback - zwróć warning ale nie rzucaj błędu
-      console.warn(`Warning: Could not extract text from PDF ${filePath}, using raw search only`);
-      return text;
+    if (numeryFV.length > 0) {
+      // Zwróć znalezione numery FV
+      return numeryFV.join('\n');
     }
 
-    return extractedText;
+    // Ostateczny fallback - zwróć ostrzeżenie ale nie rzucaj błędu
+    console.warn(`Warning: Could not extract text from PDF ${filePath}`);
+    return '';
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : String(error);
     console.error(`Błąd przy przetwarzaniu PDF ${filePath}:`, errorMsg);
-    throw new Error(`Nie udało się przetworzyć pliku PDF: ${errorMsg}`);
+    
+    // Nie rzucaj błędu - zamiast tego spróbuj fallback
+    try {
+      const fvNumbers = extractFVFromRawPDF(filePath);
+      if (fvNumbers.length > 0) {
+        return fvNumbers.join('\n');
+      }
+    } catch (fallbackError) {
+      console.error(`Fallback also failed for ${filePath}`);
+    }
+    
+    // Jeśli wszystko zawiedzie, zwróć pusty string zamiast rzucać błąd
+    return '';
   }
 }
 

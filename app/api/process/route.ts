@@ -13,6 +13,12 @@ interface ProcessingResult {
   error?: string;
 }
 
+// Timeout dla serverless function (Vercel limit to 60s dla Hobby, do 900s dla Pro)
+const PROCESSING_TIMEOUT = 50000; // 50 seconds
+
+// Export maxDuration dla Vercela
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const formData = await request.formData();
@@ -54,23 +60,36 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       await writeFile(pdfPath, Buffer.from(pdfBuffer));
     }
 
-    // Przetwarzanie danych
-    const xlsxData = await processXLSX(xlsxPath);
-    const pdfResults = await processPDFFolder(pdfDir);
-    
-    // Walidacja
-    const validationResult = validateData(xlsxData, pdfResults);
+    // Przetwarzanie z timeout
+    const processingPromise = async () => {
+      const xlsxData = await processXLSX(xlsxPath);
+      const pdfResults = await processPDFFolder(pdfDir);
+      
+      // Walidacja
+      const validationResult = validateData(xlsxData, pdfResults);
 
-    // Generowanie raportu XLSX
-    const reportPath = join(tempDir, 'raport.xlsx');
-    generateXLSXReport(validationResult, reportPath);
+      // Generowanie raportu XLSX
+      const reportPath = join(tempDir, 'raport.xlsx');
+      generateXLSXReport(validationResult, reportPath);
 
-    // Przygotowanie odpowiedzi
-    const response: ProcessingResult = {
-      success: true,
-      data: validationResult,
-      reportPath: reportPath,
+      return {
+        success: true,
+        data: validationResult,
+        reportPath: reportPath,
+      } as ProcessingResult;
     };
+
+    // Dodaj timeout
+    const timeoutPromise = new Promise<ProcessingResult>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Przetwarzanie przekroczyło limit czasu (50s). Spróbuj z mniejszą ilością plików.'));
+      }, PROCESSING_TIMEOUT);
+    });
+
+    const response = await Promise.race([
+      processingPromise(),
+      timeoutPromise,
+    ]);
 
     return NextResponse.json(response);
   } catch (error) {
