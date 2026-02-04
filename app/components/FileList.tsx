@@ -116,7 +116,7 @@ const FileList: React.FC<FileListProps> = ({
                 {formatFileSize(
                   (enovaFile?.file.size || 0) + pdfFiles.reduce((sum, f) => sum + f.file.size, 0)
                 )}
-                {' '}(limit: 8MB)
+                {' '}(limit: 20MB)
               </p>
             </div>
           )}

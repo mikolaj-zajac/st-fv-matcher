@@ -39,9 +39,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     console.log('[API] Nowe żądanie POST /api/process');
     const formData = await request.formData();
     
-    const maxXlsxSize = 5 * 1024 * 1024; // 5MB
-    const maxPdfSize = 2 * 1024 * 1024; // 2MB
-    const maxBundleSize = 8 * 1024 * 1024; // 8MB
+    const maxXlsxSize = 10 * 1024 * 1024; // 10MB
+    const maxPdfSize = 15 * 1024 * 1024; // 15MB
+    const maxBundleSize = 20 * 1024 * 1024; // 20MB
 
     const bundleFile = formData.get('bundle') as File | null;
 
@@ -57,7 +57,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (bundleFile.size > maxBundleSize) {
         console.log('[API] Błąd: paczka ZIP za duża:', bundleFile.size);
         return NextResponse.json(
-          { success: false, error: `Paczka ZIP jest za duża (${(bundleFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 8MB.` },
+          { success: false, error: `Paczka ZIP jest za duża (${(bundleFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 20MB.` },
           { status: 413 }
         );
       }
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       const xlsxEntry = entries[xlsxEntryName];
       if (xlsxEntry.length > maxXlsxSize) {
         return NextResponse.json(
-          { success: false, error: `Plik XLSX jest za duży (${(xlsxEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 5MB.` },
+          { success: false, error: `Plik XLSX jest za duży (${(xlsxEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 10MB.` },
           { status: 413 }
         );
       }
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const pdfEntry = entries[pdfEntryName];
         if (pdfEntry.length > maxPdfSize) {
           return NextResponse.json(
-            { success: false, error: `Plik PDF "${pdfEntryName}" jest za duży (${(pdfEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 2MB na plik.` },
+            { success: false, error: `Plik PDF "${pdfEntryName}" jest za duży (${(pdfEntry.length / 1024 / 1024).toFixed(2)}MB). Maksymalnie 15MB na plik.` },
             { status: 413 }
           );
         }
@@ -128,7 +128,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (xlsxFile.size > maxXlsxSize) {
         console.log('[API] Błąd: plik XLSX za duży:', xlsxFile.size);
         return NextResponse.json(
-          { success: false, error: `Plik XLSX jest za duży (${(xlsxFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 5MB.` },
+          { success: false, error: `Plik XLSX jest za duży (${(xlsxFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 10MB.` },
           { status: 413 }
         );
       }
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (pdfFile.size > maxPdfSize) {
           console.log('[API] Błąd: plik PDF za duży:', pdfFile.name, pdfFile.size);
           return NextResponse.json(
-            { success: false, error: `Plik PDF "${pdfFile.name}" jest za duży (${(pdfFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 2MB na plik.` },
+            { success: false, error: `Plik PDF "${pdfFile.name}" jest za duży (${(pdfFile.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 15MB na plik.` },
             { status: 413 }
           );
         }

@@ -21,14 +21,14 @@ export default function Home() {
     
     acceptedFiles.forEach((file) => {
       // Sprawdź rozmiar pliku
-      const maxXLSXSize = 5 * 1024 * 1024; // 5MB
-      const maxPDFSize = 2 * 1024 * 1024; // 2MB
+      const maxXLSXSize = 10 * 1024 * 1024; // 10MB
+      const maxPDFSize = 15 * 1024 * 1024; // 15MB
       
       // Sprawdź typ pliku
       if (file.type === 'application/pdf') {
         // PDF - faktury z IdoSell
         if (file.size > maxPDFSize) {
-          setError(`Plik PDF "${file.name}" jest za duży (${(file.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 2MB.`);
+          setError(`Plik PDF "${file.name}" jest za duży (${(file.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 15MB.`);
           return;
         }
         
@@ -45,7 +45,7 @@ export default function Home() {
       ) {
         // Plik z Enova (CSV/Excel)
         if (file.size > maxXLSXSize) {
-          setError(`Plik XLSX "${file.name}" jest za duży (${(file.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 5MB.`);
+          setError(`Plik XLSX "${file.name}" jest za duży (${(file.size / 1024 / 1024).toFixed(2)}MB). Maksymalnie 10MB.`);
           return;
         }
         
@@ -79,10 +79,10 @@ export default function Home() {
 
     // Sprawdzenie całkowitego rozmiaru (limit Vercela ~10MB)
     const totalSize = enovaFile.file.size + pdfFiles.reduce((sum, f) => sum + f.file.size, 0);
-    const maxTotalSize = 8 * 1024 * 1024; // 8MB aby mieć margines
+    const maxTotalSize = 20 * 1024 * 1024; // 20MB
     
     if (totalSize > maxTotalSize) {
-      setError(`Całkowity rozmiar plików (${(totalSize / 1024 / 1024).toFixed(2)}MB) przekracza limit 8MB. Spróbuj z mniejszą ilością plików PDF.`);
+      setError(`Całkowity rozmiar plików (${(totalSize / 1024 / 1024).toFixed(2)}MB) przekracza limit 20MB. Spróbuj z mniejszą ilością plików PDF.`);
       return;
     }
 
