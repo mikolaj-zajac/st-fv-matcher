@@ -1,6 +1,5 @@
 // Use synchronous PDF text extraction dla Node.js environment
 // Bez worker issues
-import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import pdfParse from 'pdf-parse';
@@ -17,43 +16,6 @@ export function extractFVNumbers(text: string): string[] {
   const regex = /FV\/\d+\/PL\/\d{4}/g;
   const matches = text.match(regex) || [];
   return [...new Set(matches)];
-}
-
-/**
- * Ekstrahuj tekst z PDF używając pdftotext (system command)
- */
-function extractWithPdftotext(filePath: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn('pdftotext', [filePath, '-']);
-    let output = '';
-    let error = '';
-
-    proc.stdout.on('data', (data) => {
-      output += data.toString();
-    });
-
-    proc.stderr.on('data', (data) => {
-      error += data.toString();
-    });
-
-    proc.on('close', (code) => {
-      if (code === 0) {
-        resolve(output);
-      } else {
-        reject(new Error(`pdftotext failed: ${error || 'unknown error'}`));
-      }
-    });
-
-    proc.on('error', (err) => {
-      reject(err);
-    });
-
-    // Timeout - jeśli pdftotext trwa dłużej niż 10s, zabij proces
-    setTimeout(() => {
-      proc.kill();
-      reject(new Error('pdftotext timeout'));
-    }, 10000);
-  });
 }
 
 /**
